@@ -1,0 +1,669 @@
+<html>
+	<head>
+		<style>
+			body {
+				height : 100%;
+				width : 100%;
+				overflow: hidden;
+				margin: 0;
+			}
+			canvas { 
+				display: block;
+				position: absolute !important;
+				top: 0 !important;
+				bottom: 0 !important;
+				left: 0 !important;
+				right: 0 !important;
+				height: 100% !important;
+				width: 100% !important;
+			}
+
+			.design {
+				width: 100% !important;
+				height: 100% !important;
+			}
+
+			#nodeSelecter {
+				position: absolute;
+				bottom: 10px;
+				left: 250px;
+			}
+
+			#treeView {
+				position: absolute;
+				bottom: 10px;
+				left: 30px;
+				width: 100px;
+			}
+
+			#graphView {
+				position: absolute;
+				bottom: 10px;
+				left: 140px;
+				width: 100px;
+			}
+		</style>
+		<script src="fabric.js"></script>
+		<script src="rainbowvis.js"></script>
+		<script src="./dependentreeData.js"></script>
+	</head>
+	<body>
+		<canvas id="content" width="260" height="170"></canvas>
+		<select id="nodeSelecter" onchange="selectProjectByName(this)">
+			<option value="">Please Select a Project</option>
+		</select>
+		<button id="treeView" onclick="renderTree()">Tree View</button>
+		<button id="graphView" onclick="renderGraph()">Graph View</button>
+		<script>
+			function selectProjectByName(selector) {
+				if(selector.value === "") {
+					return;
+				}
+
+				if(mode === "graphView") {
+					content.lastSelected = dependentreeData.Projects[selector.value].Elements.group;
+
+					content.setActiveObject(content.lastSelected);
+					content.renderAll();
+				} else {
+					renderTree();
+				}
+			};
+
+			function groupsortProjects(array) {
+				var grouped = {
+					unused: [],
+					outer: [],
+					center: [],
+					inner: []
+				};
+
+				array.forEach((entry) => {
+					if(entry.DependsOn.length == 0 && entry.DependedOnBy.length == 0) {
+						grouped.unused.push(entry);
+					} else if(entry.DependsOn.length > 0 && entry.DependedOnBy.length == 0) {
+						grouped.outer.push(entry);
+					} else if(entry.DependsOn.length > 0 && entry.DependedOnBy.length > 0) {
+						grouped.inner.push(entry);
+					} else {
+						grouped.center.push(entry);
+					}
+				});
+
+				grouped.center.sort((left, right) => {
+					return (left.DependedOnBy.length - right.DependedOnBy.length) * -1;
+				})
+
+				grouped.inner.sort((left, right) => {
+					return (left.DependedOnBy.length - right.DependedOnBy.length) * -1;
+				});
+
+				return grouped;
+			}
+
+			function getEquidistantCoordinatesOnEllipse(centerX, centerY, radiusX, radiusY, numberOfPoints) {
+				var coordinates = [];
+				var angleIncrement = (2 * Math.PI) / numberOfPoints;
+
+				for (var i = 0; i < numberOfPoints; i++) {
+					var angle = i * angleIncrement;
+					var x = centerX + radiusX * Math.cos(angle);
+					var y = centerY + radiusY * Math.sin(angle);
+					coordinates.push({ x: x, y: y });
+				}
+
+				return coordinates;
+			}
+
+			function generatePoints(width, height) {
+				return [{
+					x: 0, y: height / 2
+				}, {
+					x: height / 2, y: 0
+				}, {
+					x: width - height / 2, y: 0
+				}, {
+					x: width, y: height / 2
+				}, {
+					x: width - height / 2, y: height
+				}, {
+					x: height / 2, y: height
+				}];
+			}
+
+			function connectProjects(fromProject, toProject, origin, color) {
+				if(color === undefined) {
+					color = "#444444";
+				}
+
+				var originX = 0;
+				var destinationX = 0;
+				
+				if(origin === "dependedOnBy") {
+					originX = fromProject.Elements.group.left + fromProject.Elements[origin].width / 2;
+					destinationX = toProject.Elements.group.left + toProject.Elements.group.width - toProject.Elements[origin].width / 2;
+				} else {
+					originX = fromProject.Elements.group.left + fromProject.Elements.group.width - fromProject.Elements[origin].width / 2;
+					destinationX = toProject.Elements.group.left + toProject.Elements[origin].width / 2;
+				}
+
+				var originY = fromProject.Elements.group.top + fromProject.Elements.group.height / 2;
+				var destinationY = toProject.Elements.group.top + toProject.Elements.group.height / 2;
+				
+				var line = new fabric.Line([originX, originY, destinationX, destinationY], {fill: "", stroke: color, objectCaching: false, selectable: false})
+				
+				fromProject.Connections.Origins[toProject.Name] = line;
+				toProject.Connections.Destinations[fromProject.Name] = line;
+
+				content.add(line);
+				content.sendToBack(line);
+			}
+
+			function createProjectNode(project, x, y) {
+				var title = new fabric.Textbox(project.Name.replaceAll(" ", "_"), {top: 25, left: infoWidth, width: 0, originY: "center", fill: "#000000", textAlign: "center"});
+				
+				title.width += 50;
+
+				var maxWidth = baseWidth - infoWidth * 2;
+				var myWidth = title.width + infoWidth * 2;
+				
+				var basePoints = generatePoints(myWidth, baseHeight);
+				var infoPoints = generatePoints(infoWidth, infoHeight);
+				var base = new fabric.Polygon(basePoints, {fill: "#" + rainbow.colourAt(project.Heat)});
+				var dependsOn = new fabric.Polygon(infoPoints, {left: myWidth - infoWidth, fill: "#444444"});
+				var dependedOnBy = new fabric.Polygon(infoPoints, {fill: "#444444"});
+				var dependsOnCount = new fabric.Textbox(project.DependsOn.length.toString(), {width: infoWidth, left: myWidth - infoWidth, top: 2, fill: "#FFFFFF", textAlign: "center"});
+				var dependedOnByCount = new fabric.Textbox(project.DependedOnBy.length.toString(), {width: infoWidth, top: 2, fill: "#FFFFFF", textAlign: "center"});
+				var group = new fabric.Group([base, dependsOn, dependedOnBy, title, dependsOnCount, dependedOnByCount], {left: x, top: y});
+				
+				group.project = project;
+				group.hasControls = false;
+
+				content.add(group);
+
+				return {
+					group: group,
+					base: base,
+					dependsOn: dependsOn,
+					dependedOnBy: dependedOnBy
+				};
+			}
+
+			function colorConnections(project, destinationColor, originColor, width) {
+				var destinations = project.Connections.Destinations;
+				
+				for(destination in destinations) {
+					var line = destinations[destination];
+
+					line.set('stroke', destinationColor);
+					line.set('strokeWidth', width);
+				}
+
+				var origins = project.Connections.Origins;
+				
+				for(origin in origins) {
+					var line = origins[origin];
+
+					line.set('stroke', originColor);
+					line.set('strokeWidth', width);
+				}
+			}
+
+			function selectProject(project) {
+				for(var projectId in dependentreeData.Projects) {
+					if(projectId == project.Name) {
+						continue;
+					}
+
+					var found = false;
+
+					for(var index in project.DependsOn) {
+						var match = project.DependsOn[index];
+
+						if(match == projectId) {
+							found = true;
+							break;
+						}
+					}
+
+					if(found) {
+						continue;
+					}
+
+					for(var index in project.DependedOnBy) {
+						var match = project.DependedOnBy[index];
+
+						if(match == projectId) {
+							found = true;
+							break;
+						}
+					}
+
+					if(found) {
+						continue;
+					}
+
+					var p = dependentreeData.Projects[projectId];
+
+					p.Elements.group.set("opacity", "0.2");
+				}
+
+				colorConnections(project, '#FFFF00', '#FF00FF', 3);
+			}
+
+			function deselectProject(project) {
+				for(var projectId in dependentreeData.Projects) {
+					var p = dependentreeData.Projects[projectId];
+
+					p.Elements.group.set("opacity", "1.0");
+				}
+
+				colorConnections(project, defaultLineColor, defaultLineColor, 1);
+			}
+
+			function displayProjects(projects, positionData) {
+				for(var index in projects) {
+					var project = projects[index];
+
+					project.Connections = {
+						Origins: {},
+						Destinations: {}
+					};
+					
+					var point = positionData.points.pop();
+
+					project.Elements = createProjectNode(project, point.x, point.y);
+
+					if(point.x > positionData.farthestX) {
+						positionData.farthestX = point.x;
+					}
+
+					if(point.y < positionData.farthestY) {
+						positionData.farthestY = point.y;
+					}
+
+					positionData.usedNodes += 1;
+
+					if(positionData.points.length == 0) {
+						positionData.limit *= positionData.nodeRate;
+						positionData.radiusX *= positionData.positionRate;
+						positionData.radiusY *= positionData.positionRate;
+						positionData.positionRate *= positionData.positionRateDecrease;
+						positionData.nodeRate *= positionData.positionRateDecrease;
+						
+						if(positionData.limit > positionData.totalNodes - positionData.usedNodes) {
+							positionData.limit = positionData.totalNodes - positionData.usedNodes;
+						}
+
+						positionData.points = getEquidistantCoordinatesOnEllipse(0, 0, positionData.radiusX, positionData.radiusY, positionData.limit);
+					}
+				}
+			}
+
+			function renderGraph() {
+				mode = "graphView";
+				content.clear();
+				content.backgroundColor = "#000000";
+				defaultLineColor = "#444444";
+
+				var groupedProjects = groupsortProjects(Object.values(dependentreeData.Projects));
+				var positionData = {
+					radiusX: 800,
+					radiusY: 300,
+					limit: 4,
+					positionRate: 2.0,
+					nodeRate: 2.0,
+					positionRateDecrease: 0.93,
+					totalNodes: Object.keys(dependentreeData.Projects).length - groupedProjects.unused.length,
+					usedNodes: 0,
+					points: getEquidistantCoordinatesOnEllipse(0, 0, 600, 300, 5),
+					farthestX: 0,
+					farthestY: 0
+				}
+
+				displayProjects(groupedProjects.center, positionData);
+				displayProjects(groupedProjects.inner, positionData);
+				displayProjects(groupedProjects.outer, positionData);
+
+				var x = positionData.farthestX + 1500;
+				var y = 0;
+
+				for(name in groupedProjects.unused) {
+					var project = groupedProjects.unused[name];
+
+					project.Connections = {
+						Origins: {},
+						Destinations: {}
+					};
+
+					project.Elements = createProjectNode(groupedProjects.unused[name], x, y);
+
+					y += 100;
+
+					if(y > 1500) {
+						y = 0;
+						x += 1500;
+						positionData.farthestX += 1500;
+					}
+				}
+
+				zoomToFit();
+
+				for(current in dependentreeData.Projects) {
+					var currentProject = dependentreeData.Projects[current];
+
+					currentProject.DependsOn.forEach((name) => {
+						var destination = dependentreeData.Projects[name];
+
+						if(destination === undefined) {
+							return;
+						}
+
+						connectProjects(currentProject, destination, "dependsOn");
+					});
+				}
+			}
+			
+			function removeDuplicates(arr) {
+				return arr.filter((item, index) => arr.indexOf(item) === index);
+			}
+
+			function renderTree() {
+				mode = "treeView";
+				if(selector.value === "") {
+					return;
+				}
+			
+				defaultLineColor = "#00FF00";
+
+				content.lastSelected = undefined;
+				content.clear();
+				content.backgroundColor = "#000000";
+
+				var project = dependentreeData.Projects[selector.value];
+
+				project.Connections = {
+					Origins: {},
+					Destinations: {}
+				};
+				
+				var node = project.Elements.group;
+				
+				node.set({
+					left: 0,
+					top: 0
+				})
+
+				content.add(node);
+
+				var positionData = {
+					nextColumn: node.width + 200,
+					width: node.width + 200,
+					height: 0
+				}
+
+				var toConnect = renderDependencyTree(project.DependsOn, positionData, 1);
+
+				toConnect.push(project.Name);
+				toConnect = toConnect.concat(project.DependsOn);
+				toConnect = removeDuplicates(toConnect);
+
+				for(index in toConnect) {
+					var currentProject = dependentreeData.Projects[toConnect[index]];
+
+					if(currentProject === undefined) {
+						continue;
+					}
+
+					currentProject.DependsOn.forEach((name) => {
+						var destination = dependentreeData.Projects[name];
+
+						if(destination === undefined) {
+							return;
+						}
+
+						connectProjects(currentProject, destination, "dependsOn", '#00FF00');
+					});
+				}
+
+				zoomToFit();
+			}
+
+			var maxDepth = 100;
+
+			function renderDependencyTree(dependencies, positionData, depth) {
+				if(positionData.height < dependencies.length * 100) {
+					positionData.height = dependencies.length * 100;
+				}
+
+				var nextRow = dependencies.length * 100 / 2;
+				var nextDependencies = [];
+
+				for(var index in dependencies) {
+					var dependency = dependentreeData.Projects[dependencies[index]];
+
+					if(dependency === undefined) {
+						continue;
+					}
+
+					dependency.Connections = {
+						Origins: {},
+						Destinations: {}
+					};
+
+					nextDependencies = nextDependencies.concat(dependency.DependsOn);
+
+					node = dependency.Elements.group;
+
+					node.set({
+						left: positionData.nextColumn,
+						top: nextRow - index * 100
+					});
+
+					if(positionData.width < node.left + node.width) {
+						positionData.width = node.left + node.width;
+					}
+
+					content.add(node);
+				}
+
+				if(nextDependencies.length !== 0 && depth < maxDepth) {
+					positionData.nextColumn = positionData.width + 200;
+					newDependencies = renderDependencyTree(removeDuplicates(nextDependencies), positionData, depth + 1);
+					nextDependencies = nextDependencies.concat(newDependencies);
+				}
+
+				return nextDependencies;
+			}
+
+			function zoomToFit() {
+				//first check if there are any elemnts to zoom to
+				if (content.getObjects().length < 1) {
+					return;
+				}
+				// reset zoom so pan actions work as expected
+				content.setZoom(1);
+				//group all the objects
+				var objs = content.getObjects();
+				var left = 0;
+				var top = 0;
+				var right = 0;
+				var bottom = 0;
+				var width = 0;
+				var height = 0;
+
+				for(var index in objs) {
+					var obj = objs[index];
+
+					if(obj.left < left) {
+						left = obj.left;
+					}
+
+					if(obj.top < top) {
+						top = obj.top;
+					}
+
+					if(obj.left + obj.width > right) {
+						right = obj.left + obj.width;
+					}
+
+					if(obj.top + obj.height > bottom) {
+						bottom = obj.top + obj.height;
+					}
+				}
+
+				width = right - left;
+				height = bottom - top;
+
+				//find the centre of the group on the content
+				const x = (left + (width / 2)) - (content.width / 2);
+				const y = (top + (height / 2)) - (content.height / 2);
+				//and pan to it
+				content.absolutePan({x:x, y:y});
+				//now we need to decide whether width or height should determine the scaling
+				//e.g. a portrait box in a landscape content (height) needs scaling differently to a portrait box in a portrait content (could be height or width)
+				//or a landscape box in a portrait content (width)
+				//work out the distance between the edges of the group and the content
+				const heightDist = content.getHeight() - height;
+				const widthDist = content.getWidth() - width;
+				let groupDimension = 0;
+				let contentDimension = 0;
+				//the smaller the number then that's the side we need to use as a reference to scale
+				//either group is inside the content (positive number) so the edge closest to the limits of the content will be used as the reference scale (smallest positive difference)
+				//or the group extends outside the content so the edge that extends further will be the reference (large negative number)
+				//either way, we want the smallest number
+				if (heightDist < widthDist) {
+					//height is the reference so need the height to scale to be nearly the height of the content
+					groupDimension = height;
+					contentDimension = content.getHeight();
+				} else {
+					//width is the reference so need the width to scale to be nearly the width of the content
+					groupDimension = width;
+					contentDimension = content.getWidth();
+				}
+				//work out how to scale the group to match the content size (then only make it zoom 80% of the way)
+				const zoom = (contentDimension / groupDimension) * 0.95;
+				//we've already panned the content to the centre of the group, so now zomm using teh centre of teh content as teh reference point
+				content.zoomToPoint({ x: content.width / 2, y: content.height / 2 }, zoom);
+			}
+			</script>
+		<script>
+			var selector = document.getElementById("nodeSelecter");
+
+			var keys = Object.keys(dependentreeData.Projects).sort();
+			for(var index in keys) {
+				var name = keys[index];
+				var opt = document.createElement('option');
+				opt.value = name;
+				opt.innerHTML = name;
+				selector.appendChild(opt);
+			}
+
+			var baseWidth = 600;
+			var baseHeight = 50;
+
+			var infoWidth = 85;
+			var infoHeight = 50;
+
+			var rainbow = new Rainbow();
+
+			rainbow.setNumberRange(0, dependentreeData.HeatCap == 0 ? 1 : dependentreeData.HeatCap);
+			rainbow.setSpectrum('white', 'red');
+
+			var c = document.getElementById("content");
+
+			c.width = window.innerWidth;
+			c.height = window.innerHeight;
+			
+			fabric.Object.prototype.objectCaching = false;
+
+			var content = new fabric.Canvas('content', { containerClass: 'design', backgroundColor: "#000000" });
+
+			renderGraph();
+
+			content.on('selection:created', function(e) {
+				selectProject(e.selected[0].project);
+				selector.value = e.selected[0].project.Name;
+			});
+
+			content.on('selection:updated', function(e) {
+				deselectProject(e.deselected[0].project);
+				selectProject(e.selected[0].project);
+			})
+
+			content.on('selection:cleared', function(e) {
+				content.lastSelected = e.deselected[0];
+				deselectProject(e.deselected[0].project);
+			})
+
+			content.on('object:moving', function(e) {
+				var project = e.target.project;
+				var destinations = project.Connections.Destinations;
+				var origins = project.Connections.Origins;
+				
+				var destinationY = project.Elements.group.top + project.Elements.group.height / 2;
+				var destinationX = project.Elements.group.left + project.Elements.dependsOn.width / 2;
+				
+				for(destination in destinations) {
+					destinations[destination].set({x2: destinationX, y2: destinationY});
+				}
+				
+				var originY = project.Elements.group.top + project.Elements.group.height / 2;
+				var originX = project.Elements.group.left + project.Elements.group.width - project.Elements.dependsOn.width / 2;
+				
+				for(origin in origins) {
+					origins[origin].set({x1: originX, y1: originY});
+				}
+			});
+
+			// hook up the pan and zoom
+			content.on('mouse:wheel', function (opt) {
+				var delta = opt.e.deltaY;
+				var zoom = content.getZoom();
+				zoom *= 0.999 ** delta;
+				if (zoom > 20) zoom = 20;
+				if (zoom < 0.01) zoom = 0.01;
+				var pointer = this.getPointer(opt.e);
+				this.zoomToPoint({ x: opt.e.offsetX, y: opt.e.offsetY }, zoom);
+				opt.e.preventDefault();
+				opt.e.stopPropagation();
+			});
+
+			content.on('mouse:down', function (opt) {
+				if(this.isDragging) {
+					return;
+				}
+				var evt = opt.e;
+				if (evt.altKey === true) {
+					this.isDragging = true;
+					this.selection = false;
+					this.lastPosX = evt.clientX;
+					this.lastPosY = evt.clientY;
+					if(this.lastSelected !== undefined) {
+						this.setActiveObject(this.lastSelected);
+					}
+					opt.e.preventDefault();
+					opt.e.stopPropagation();
+				}
+			});
+
+			content.on('mouse:move', function (opt) {
+				if (this.isDragging) {
+					var e = opt.e;
+					var vpt = this.viewportTransform;
+					vpt[4] += e.clientX - this.lastPosX;
+					vpt[5] += e.clientY - this.lastPosY;
+					this.requestRenderAll();
+					this.lastPosX = e.clientX;
+					this.lastPosY = e.clientY;
+				}
+			});
+
+			content.on('mouse:up', function (opt) {
+				this.lastSelected = undefined;
+				this.isDragging = false;
+				this.selection = true;
+			});
+		</script>
+	</body>
+</html>

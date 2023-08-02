@@ -1,0 +1,8 @@
+{
+  "profiles": {
+    "Dependentree": {
+      "commandName": "Project",
+      "commandLineArgs": "--path C:\\Users\\eeikenberry\\source\\repos\\FAST\r\n--heatdata C:\\Users\\eeikenberry\\source\\repos\\Dependentree\\hotzones.txt"
+    }
+  }
+}
