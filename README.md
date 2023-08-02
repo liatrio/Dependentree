@@ -2,7 +2,6 @@
 
 * .Net 7
 * A Browser (Only tested in Chrome)
-* WSL
 
 # Build & Run
 
@@ -10,11 +9,11 @@
 	* Nix systems
 	`git log --since="2023-01-01" --name-only --pretty="format:" | sed '/^\s*$/'d | sort | uniq -c | sort -r > heatdata.txt`
 	* Windows
-	`(git log --since="2023-01-01" --name-only --pretty="format:") -notmatch '^\s*$' | Sort-Object | Group-Object | Select-Object | ForEach-Object {"     " + $_.Count + " " + $_.Name} | Sort-Object -Descending`
+	`(git log --since="2023-01-01" --name-only --pretty="format:") -notmatch '^\s*$' | Sort-Object | Group-Object | Select-Object | ForEach-Object {"     " + $_.Count + " " + $_.Name} | Sort-Object -Descending | Out-File heatdata.txt`
 2. Navigate back this project folder and in powershell and run:
 	`dotnet build`
 3. Run the project with the following command:
-	`dotnet run -- --path [path to scan folder] --heatdata [path to hotzone file]`
+	`dotnet run -- --path [path to scan folder] --heatdata [path to hotzone file from step 1]`
 4. Open up the `dependentree.html` in your browser
 
 # UI
